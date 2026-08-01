@@ -1,12 +1,12 @@
 :root {
-  color-scheme: light;
-  --paper: #e9e6de;
-  --paper-deep: #dedad0;
-  --ink: #171816;
-  --muted: #686a63;
-  --line: #a8a69d;
-  --card: rgba(245, 243, 236, 0.72);
-  --shadow: rgba(23, 24, 22, 0.08);
+  color-scheme: dark;
+  --paper: #050505;
+  --paper-deep: #0b0b0a;
+  --ink: #f1f1ed;
+  --muted: #92958c;
+  --line: #343630;
+  --card: rgba(14, 15, 13, 0.9);
+  --shadow: rgba(0, 0, 0, 0.48);
   font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
 }
 
@@ -16,6 +16,7 @@
 
 html {
   scroll-behavior: smooth;
+  background: var(--paper);
 }
 
 body {
@@ -23,10 +24,11 @@ body {
   min-width: 320px;
   color: var(--ink);
   background:
-    linear-gradient(rgba(23, 24, 22, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 24, 22, 0.018) 1px, transparent 1px),
+    radial-gradient(circle at 50% -20%, rgba(255, 255, 255, 0.055), transparent 42%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px),
     var(--paper);
-  background-size: 6px 6px, 11px 11px, auto;
+  background-size: auto, 6px 6px, 11px 11px, auto;
 }
 
 button,
@@ -99,7 +101,7 @@ main {
   align-items: end;
   padding: 22px;
   border: 1px solid var(--ink);
-  background: rgba(233, 230, 222, 0.9);
+  background: rgba(8, 8, 8, 0.94);
 }
 
 .controls label {
@@ -119,7 +121,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 0;
   color: var(--ink);
-  background: transparent;
+  background: #0a0a09;
 }
 
 input,
@@ -128,17 +130,21 @@ select {
   padding: 0 13px;
 }
 
+input::placeholder {
+  color: #696c65;
+}
+
 button {
   padding: 0 20px;
   border-color: var(--ink);
-  color: var(--paper);
-  background: var(--ink);
+  color: var(--ink);
+  background: #10110f;
   cursor: pointer;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition: background 120ms ease, transform 120ms ease, opacity 120ms ease;
 }
 
 button:hover {
-  opacity: 0.84;
+  background: #1a1b18;
 }
 
 button:active {
@@ -181,13 +187,13 @@ button:focus-visible {
   padding: clamp(24px, 4vw, 48px);
   border: 1px solid var(--line);
   background: var(--card);
-  box-shadow: 0 14px 40px var(--shadow);
+  box-shadow: 0 18px 52px var(--shadow);
 }
 
 .lore-card::before {
   position: absolute;
   inset: 8px;
-  border: 1px solid rgba(23, 24, 22, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.055);
   content: "";
   pointer-events: none;
 }
