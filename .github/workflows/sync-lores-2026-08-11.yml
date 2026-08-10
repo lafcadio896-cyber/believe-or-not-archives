@@ -1,0 +1,74 @@
+name: Sync lores 2026-08-11
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pending/lores-2026-08-11.json
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate and append generated lores
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path('pending/lores-2026-08-11.json')
+          if not source.exists():
+              print('pending file absent; nothing to do')
+              raise SystemExit(0)
+          data_path = Path('data/lores.json')
+          current = json.loads(data_path.read_text(encoding='utf-8'))
+          incoming = json.loads(source.read_text(encoding='utf-8'))
+          if not isinstance(current, list) or not isinstance(incoming, list):
+              raise SystemExit('JSON root must be an array')
+          if len(incoming) != 10:
+              raise SystemExit(f'expected 10 incoming lores, got {len(incoming)}')
+          required = {'id','published','title','region','era','medium','tags','lines'}
+          for item in incoming:
+              missing = required - set(item)
+              if missing:
+                  raise SystemExit(f"{item.get('id')}: missing {sorted(missing)}")
+              if not isinstance(item['lines'], list) or len(item['lines']) != 4:
+                  raise SystemExit(f"{item['id']}: lines must contain exactly 4 items")
+          current_ids = [item['id'] for item in current]
+          incoming_ids = [item['id'] for item in incoming]
+          if len(current_ids) != len(set(current_ids)):
+              raise SystemExit('duplicate IDs already exist in current data')
+          if len(incoming_ids) != len(set(incoming_ids)):
+              raise SystemExit('duplicate IDs in incoming data')
+          duplicates = set(current_ids) & set(incoming_ids)
+          if duplicates:
+              raise SystemExit(f'already exists: {sorted(duplicates)}')
+          current.extend(incoming)
+          all_ids = [item['id'] for item in current]
+          if len(all_ids) != len(set(all_ids)):
+              raise SystemExit('duplicate IDs after append')
+          encoded = json.dumps(current, ensure_ascii=False, separators=(',', ':'))
+          encoded = encoded.replace('[{','[\n  {').replace('},{','},\n  {').replace('}]','}\n]') + '\n'
+          json.loads(encoded)
+          data_path.write_text(encoded, encoding='utf-8')
+          print(f'appended={len(incoming)} total={len(current)}')
+          PY
+      - name: Commit JSON
+        shell: bash
+        run: |
+          if git diff --quiet -- data/lores.json; then
+            echo 'No JSON change'
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/lores.json
+          git commit -m "2026-08-11のネットロア10件をJSONへ追加"
+          git push origin HEAD:main
