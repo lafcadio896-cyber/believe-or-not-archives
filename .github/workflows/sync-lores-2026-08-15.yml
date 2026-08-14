@@ -1,0 +1,51 @@
+name: Sync lores 2026-08-15
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append and validate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data_path = Path('data/lores.json')
+          pending_path = Path('pending/lores-2026-08-15.json')
+          data = json.loads(data_path.read_text(encoding='utf-8'))
+          incoming = json.loads(pending_path.read_text(encoding='utf-8'))
+          if len(incoming) != 10:
+              raise SystemExit(f'expected 10 lores, got {len(incoming)}')
+          if any(len(x.get('lines', [])) != 4 for x in incoming):
+              raise SystemExit('every lore must have exactly 4 lines')
+          old_ids = [x['id'] for x in data]
+          new_ids = [x['id'] for x in incoming]
+          if len(new_ids) != len(set(new_ids)):
+              raise SystemExit('duplicate IDs in incoming data')
+          if set(old_ids) & set(new_ids):
+              raise SystemExit('incoming ID already exists')
+          data.extend(incoming)
+          ids = [x['id'] for x in data]
+          if len(ids) != len(set(ids)):
+              raise SystemExit('duplicate IDs after append')
+          data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+          json.loads(data_path.read_text(encoding='utf-8'))
+          pending_path.unlink()
+          PY
+      - name: Commit to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/lores.json pending/lores-2026-08-15.json
+          git commit -m '2026-08-15のネットロア10件をJSONへ追加'
+          git push origin HEAD:main
