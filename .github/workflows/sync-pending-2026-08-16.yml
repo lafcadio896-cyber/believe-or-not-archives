@@ -1,0 +1,66 @@
+name: Sync pending lores 2026-08-16
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Append validated pending data
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data_path = Path('data/lores.json')
+          pending_path = Path('pending/lores-2026-08-16.json')
+          data = json.loads(data_path.read_text(encoding='utf-8'))
+          pending = json.loads(pending_path.read_text(encoding='utf-8'))
+
+          if len(pending) != 10:
+              raise SystemExit(f'expected 10 pending lores, got {len(pending)}')
+          current_ids = [x['id'] for x in data]
+          incoming_ids = [x['id'] for x in pending]
+          if len(current_ids) != len(set(current_ids)):
+              raise SystemExit('duplicate IDs already exist in data')
+          if len(incoming_ids) != len(set(incoming_ids)):
+              raise SystemExit('duplicate IDs in pending data')
+          dup = set(current_ids) & set(incoming_ids)
+          if dup:
+              raise SystemExit(f'IDs already exist: {sorted(dup)}')
+          if any(len(x.get('lines', [])) != 4 for x in pending):
+              raise SystemExit('every pending lore must have exactly four lines')
+
+          data.extend(pending)
+          data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+
+          final = json.loads(data_path.read_text(encoding='utf-8'))
+          ids = [x['id'] for x in final]
+          if len(ids) != len(set(ids)):
+              raise SystemExit('duplicate IDs after append')
+          if any(len(x.get('lines', [])) != 4 for x in final):
+              raise SystemExit('a lore has a non-four-line body')
+
+          pending_path.unlink()
+          Path('.github/workflows/sync-pending-2026-08-16.yml').unlink()
+          PY
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A data/lores.json pending/lores-2026-08-16.json .github/workflows/sync-pending-2026-08-16.yml
+          git diff --cached --quiet && exit 0
+          git commit -m '2026-08-16のネットロア10件を本体データへ追加'
+          git push origin HEAD:main
