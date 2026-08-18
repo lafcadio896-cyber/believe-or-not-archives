@@ -1,0 +1,95 @@
+name: Sync lores 2026-08-19
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/sync-lores-2026-08-19.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate and append prepared lores
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data_path = Path('data/lores.json')
+          pending_path = Path('pending/lores-2026-08-19.json')
+          archive_path = Path('archive/2026/08/2026-08-19.md')
+
+          current = json.loads(data_path.read_text(encoding='utf-8'))
+          incoming = json.loads(pending_path.read_text(encoding='utf-8'))
+          archive = archive_path.read_text(encoding='utf-8')
+
+          if not isinstance(current, list) or not isinstance(incoming, list):
+              raise SystemExit('JSON root must be an array')
+          if len(incoming) != 10:
+              raise SystemExit(f'expected 10 incoming lores, got {len(incoming)}')
+
+          required = {'id','published','title','region','era','medium','tags','lines'}
+          existing_ids = [item['id'] for item in current]
+          incoming_ids = [item.get('id') for item in incoming]
+          if len(existing_ids) != len(set(existing_ids)):
+              raise SystemExit('duplicate IDs already exist in data')
+          if len(incoming_ids) != len(set(incoming_ids)):
+              raise SystemExit('duplicate IDs in incoming data')
+          duplicates = set(existing_ids) & set(incoming_ids)
+          if duplicates:
+              raise SystemExit(f'IDs already exist: {sorted(duplicates)}')
+
+          expected = [f'L-20260819-{i:03d}' for i in range(1, 11)]
+          if incoming_ids != expected:
+              raise SystemExit(f'unexpected ID sequence: {incoming_ids}')
+
+          for item in incoming:
+              missing = required - set(item)
+              if missing:
+                  raise SystemExit(f"{item.get('id')}: missing {sorted(missing)}")
+              if item['published'] != '2026-08-19':
+                  raise SystemExit(f"{item['id']}: wrong published date")
+              if not isinstance(item['lines'], list) or len(item['lines']) != 4:
+                  raise SystemExit(f"{item['id']}: lines must contain exactly 4 items")
+              if f"## {item['id']}　{item['title']}" not in archive:
+                  raise SystemExit(f"{item['id']}: archive entry missing")
+              for line in item['lines']:
+                  if line not in archive:
+                      raise SystemExit(f"{item['id']}: archive text mismatch")
+
+          current.extend(incoming)
+          final_ids = [item['id'] for item in current]
+          if len(final_ids) != len(set(final_ids)):
+              raise SystemExit('duplicate IDs after append')
+
+          encoded = json.dumps(current, ensure_ascii=False, separators=(',', ':')) + '\n'
+          reparsed = json.loads(encoded)
+          if len(reparsed) != len(current):
+              raise SystemExit('JSON reparse count mismatch')
+          if [x['id'] for x in reparsed[-10:]] != expected:
+              raise SystemExit('last 10 IDs mismatch after serialization')
+
+          data_path.write_text(encoded, encoding='utf-8')
+          pending_path.unlink()
+          Path('.github/workflows/sync-lores-2026-08-19.yml').unlink()
+          print(f'appended=10 total={len(current)}')
+          PY
+
+      - name: Commit directly to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data/lores.json pending/lores-2026-08-19.json .github/workflows/sync-lores-2026-08-19.yml
+          git commit -m "2026-08-19のネットロア10件をJSONへ追加"
+          git push origin HEAD:main
