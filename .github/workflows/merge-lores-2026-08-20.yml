@@ -1,0 +1,65 @@
+name: Merge lores 2026-08-20
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/merge-lores-2026-08-20.yml
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and append prepared lores
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data_path = Path('data/lores.json')
+          pending_path = Path('pending/lores-2026-08-20.json')
+          archive_path = Path('archive/2026/08/2026-08-20.md')
+          workflow_path = Path('.github/workflows/merge-lores-2026-08-20.yml')
+
+          data = json.loads(data_path.read_text(encoding='utf-8'))
+          incoming = json.loads(pending_path.read_text(encoding='utf-8'))
+          assert isinstance(data, list)
+          assert isinstance(incoming, list) and len(incoming) == 10
+
+          existing_ids = [x['id'] for x in data]
+          incoming_ids = [x['id'] for x in incoming]
+          assert len(existing_ids) == len(set(existing_ids))
+          assert len(incoming_ids) == len(set(incoming_ids))
+          assert not set(existing_ids).intersection(incoming_ids)
+          assert incoming_ids == [f'L-20260820-{i:03d}' for i in range(1, 11)]
+          assert all(x.get('published') == '2026-08-20' for x in incoming)
+          assert all(isinstance(x.get('lines'), list) and len(x['lines']) == 4 for x in incoming)
+
+          archive = archive_path.read_text(encoding='utf-8')
+          for x in incoming:
+              assert f"## {x['id']}　{x['title']}" in archive
+              assert all(line in archive for line in x['lines'])
+
+          data.extend(incoming)
+          ids = [x['id'] for x in data]
+          assert len(ids) == len(set(ids))
+          data_path.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+          json.loads(data_path.read_text(encoding='utf-8'))
+
+          pending_path.unlink()
+          workflow_path.unlink()
+          PY
+      - name: Commit to main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m '2026-08-20のネットロア10件を本体データへ追加'
+          git push origin HEAD:main
