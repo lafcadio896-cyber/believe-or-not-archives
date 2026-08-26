@@ -2,7 +2,7 @@
 
 ## 1. 出力単位
 
-1回につき5作品を生成する。各作品には次の情報を持たせる。
+通常は1回につき5作品を生成する。実行指示で件数が指定されている場合は、その件数を優先する。各作品には次の情報を持たせる。
 
 - `id`: `L-YYYYMMDD-NNN`
 - `published`: 生成日（JST）
@@ -106,12 +106,23 @@
 
 ## 7. GitHubへの保存
 
-1. `data/lores.json` を読み込む
-2. 重複するID・題材・固有の展開がないか確認する
-3. 新作5件をJSON配列の末尾へ追加する
+1. 直近作品の確認には `data/recent-lores.json` を優先して使う。このファイルは `data/lores.json` の末尾50件を同期処理が自動生成したものなので、巨大な本体JSONを毎回全文取得しない
+2. `data/recent-lores.json` が存在しない場合だけ `data/lores.json` から直近作品を取得する
+3. 重複するID・題材・固有の展開がないか確認する
 4. `archive/YYYY/MM/YYYY-MM-DD.md` を新規作成、または同日の既存ファイルへ追記する
-5. JSONが正しい構文であることを確認する
-6. 変更内容が分かる日本語のコミットメッセージで `main` へ保存する
+5. `data/lores.json` を安全に直接更新できる場合は、そのまま末尾へ追加する
+6. GitHub接続側のサイズ制限などで本体JSONを安全に直接更新できない場合は、生成済みデータだけを `pending/lores-YYYY-MM-DD.json` として `main` へ保存する
+7. `pending` を使った場合、`.github/workflows/sync-pending-lores.yml` が行うのはJSON検証・機械的なマージ・直近50件キャッシュ更新だけであり、文章生成は行わせない
+8. 同期後は `data/latest-lore.json` または `data/recent-lores.json` で追加IDが反映されたこと、pendingファイルが消えていることを確認する
+9. JSON構文、ID重複、各 `lines` が4件であることを確認する
+10. 変更内容が分かる日本語のコミットメッセージで `main` へ保存する
+
+### 運用上の注意
+
+- 一時的なGitHub取得・更新失敗を理由に、日次生成タスクそのものを停止しない
+- 日次タスクの停止・無効化は、ユーザーから明示的な指示があった場合だけ行う
+- 同期経路は `.github/workflows/sync-pending-lores.yml` の1本だけを正とし、同じ `pending/lores-*.json` を監視する別Workflowを増やさない
+- `data/lores.json` が大きくなっても、全文取得できないことを「ファイルが空」と判断しない。直近キャッシュやGitHub上のblob/commit情報で確認する
 
 アーカイブの各作品は次の形にする。
 
