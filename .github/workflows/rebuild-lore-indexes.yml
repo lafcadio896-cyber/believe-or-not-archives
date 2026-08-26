@@ -1,0 +1,119 @@
+name: Rebuild lore indexes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'data/[0-9][0-9][0-9][0-9]/**/*.json'
+      - '.github/workflows/rebuild-lore-indexes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-lore-indexes
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate daily files and rebuild metadata
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+
+          daily_paths = sorted(Path('data').glob('[0-9][0-9][0-9][0-9]/*/*.json'))
+          if not daily_paths:
+              raise SystemExit('no daily lore files found')
+
+          required = {'id','published','title','region','era','medium','tags','lines'}
+          all_records = []
+          files = []
+          seen = set()
+
+          for path in daily_paths:
+              values = json.loads(path.read_text(encoding='utf-8'))
+              if not isinstance(values, list) or not values:
+                  raise SystemExit(f'{path}: root must be a non-empty array')
+              expected_date = path.stem
+              datetime.strptime(expected_date, '%Y-%m-%d')
+              ordered = sorted(values, key=lambda x: x['id'])
+              for item in ordered:
+                  missing = required.difference(item)
+                  if missing:
+                      raise SystemExit(f"{item.get('id')}: missing {sorted(missing)}")
+                  if item['published'] != expected_date:
+                      raise SystemExit(f"{item['id']}: published date does not match {path}")
+                  if not isinstance(item['lines'], list) or len(item['lines']) != 4:
+                      raise SystemExit(f"{item['id']}: lines must contain exactly 4 items")
+                  if item['id'] in seen:
+                      raise SystemExit(f"duplicate ID: {item['id']}")
+                  seen.add(item['id'])
+              files.append({
+                  'date': expected_date,
+                  'path': path.as_posix(),
+                  'count': len(ordered),
+                  'first_id': ordered[0]['id'],
+                  'last_id': ordered[-1]['id'],
+              })
+              all_records.extend(ordered)
+
+          all_records.sort(key=lambda x: (x['published'], x['id']))
+          latest = all_records[-1]
+
+          index = {
+              'version': 1,
+              'total': len(all_records),
+              'latest_id': latest['id'],
+              'latest_published': latest['published'],
+              'files': files,
+          }
+          Path('data/index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          recent = list(reversed(all_records))[:100]
+          Path('data/recent-lores.json').write_text(json.dumps(recent, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          fingerprints = [{
+              'id': item['id'],
+              'published': item['published'],
+              'title': item['title'],
+              'region': item['region'],
+              'era': item['era'],
+              'medium': item['medium'],
+              'tags': item.get('tags', []),
+              'opening': item['lines'][0],
+              'ending': item['lines'][-1],
+          } for item in reversed(all_records)]
+          Path('data/fingerprints.json').write_text(json.dumps(fingerprints, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+
+          Path('data/latest-lore.json').write_text(
+              json.dumps({'id': latest['id'], 'published': latest['published'], 'count': len(all_records)}, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+
+          # Reparse every generated file.
+          for generated in ['data/index.json','data/recent-lores.json','data/fingerprints.json','data/latest-lore.json']:
+              json.loads(Path(generated).read_text(encoding='utf-8'))
+          print(f'total={len(all_records)} files={len(files)} latest={latest["id"]}')
+          PY
+
+      - name: Commit rebuilt indexes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/index.json data/recent-lores.json data/fingerprints.json data/latest-lore.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'ロア索引と重複確認データを更新'
+          git pull --rebase origin main
+          git push origin HEAD:main
