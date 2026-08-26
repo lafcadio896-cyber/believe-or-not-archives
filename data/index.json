@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "total": 272,
   "latest_id": "L-20260826-010",
   "latest_published": "2026-08-26",
@@ -171,6 +171,20 @@
       "count": 10,
       "first_id": "L-20260826-001",
       "last_id": "L-20260826-010"
+    }
+  ],
+  "bundles": [
+    {
+      "month": "2026-08",
+      "path": "data/bundles/2026-08.json",
+      "count": 272
+    }
+  ],
+  "fingerprints": [
+    {
+      "month": "2026-08",
+      "path": "data/fingerprints/2026/08.json",
+      "count": 272
     }
   ]
 }
