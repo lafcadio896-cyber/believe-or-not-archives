@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "total": 272,
   "latest_id": "L-20260826-010",
   "latest_published": "2026-08-26",
@@ -184,7 +184,10 @@
     {
       "month": "2026-08",
       "path": "data/fingerprints/2026/08.json",
-      "count": 272
+      "count": 272,
+      "schema_version": 2
     }
-  ]
+  ],
+  "assets_index": "data/assets/index.json",
+  "relations_index": "data/relations/index.json"
 }
