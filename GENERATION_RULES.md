@@ -13,7 +13,7 @@
 - `tags`: 3個程度
 - `lines`: 本文4行
 
-同日の連番は、既存の最大値の次から始める。
+同日の連番は、当日の `data/YYYY/MM/YYYY-MM-DD.json` と `data/latest-lore.json` を確認し、既存の最大値の次から始める。
 
 ## 2. 文体
 
@@ -49,9 +49,17 @@
 
 ただし、記録や数値そのものを主役にしすぎない。人間の生活、場所、習慣、移動、仕事、自然、身近な物など、読者が直感的に想像できる出来事を怪異の中心に置き、記録媒体はそれを裏付ける役割として使う。
 
-## 4. 題材の偏り防止
+## 4. 題材の偏り・重複防止
 
-直近30作品を確認し、次を避ける。
+まず `data/recent-lores.json` の直近100作品を確認する。直近作品については、題材だけでなく「怪異がどう起こるか」「途中で何を確認するか」「最後に何が残るか」まで比較する。
+
+同じ題材や怪異タイプそのものは再利用してよい。たとえば傘、井戸、存在しない部屋、戻ってくる物、未来の記録などが過去に登場していても、それだけを理由に不採用にしない。
+
+避けるべきなのは、**題材＋展開＋結末が組み合わさって既存作とほぼ同じ構造になること**である。舞台名や物だけを交換した言い換えは作らない。
+
+直近100作品より古い作品については厳密な完全比較を要求しない。候補作が既視感の強い題材になった場合だけ、`data/fingerprints/` 以下の月別fingerprintをGitHub検索または必要な月だけ参照する。古い作品との多少のモチーフ重複は許容し、露骨なコピーに見える場合だけ作り直す。
+
+直近作品ではさらに次を避ける。
 
 - 同じ国・都道府県が4回以上続く
 - 同じ年代区分が3回以上続く
@@ -106,23 +114,39 @@
 
 ## 7. GitHubへの保存
 
-1. 直近作品の確認には `data/recent-lores.json` を優先して使う。このファイルは `data/lores.json` の末尾50件を同期処理が自動生成したものなので、巨大な本体JSONを毎回全文取得しない
-2. `data/recent-lores.json` が存在しない場合だけ `data/lores.json` から直近作品を取得する
-3. 重複するID・題材・固有の展開がないか確認する
+ロア本文の正本は、**日別JSON** とする。全作品をまとめた巨大JSONは作らない。
+
+1. `data/recent-lores.json` で直近100作品を読む
+2. 必要に応じて `data/fingerprints/YYYY/MM.json` を検索・参照して古い作品との露骨な構造重複だけを確認する
+3. 当日の正本 `data/YYYY/MM/YYYY-MM-DD.json` を確認する。存在しなければ新規作成し、存在する場合は新作を末尾へ追加する
 4. `archive/YYYY/MM/YYYY-MM-DD.md` を新規作成、または同日の既存ファイルへ追記する
-5. `data/lores.json` を安全に直接更新できる場合は、そのまま末尾へ追加する
-6. GitHub接続側のサイズ制限などで本体JSONを安全に直接更新できない場合は、生成済みデータだけを `pending/lores-YYYY-MM-DD.json` として `main` へ保存する
-7. `pending` を使った場合、`.github/workflows/sync-pending-lores.yml` が行うのはJSON検証・機械的なマージ・直近50件キャッシュ更新だけであり、文章生成は行わせない
-8. 同期後は `data/latest-lore.json` または `data/recent-lores.json` で追加IDが反映されたこと、pendingファイルが消えていることを確認する
-9. JSON構文、ID重複、各 `lines` が4件であることを確認する
-10. 変更内容が分かる日本語のコミットメッセージで `main` へ保存する
+5. 当日のJSONについて構文、ID重複、各 `lines` が4件であることを確認する
+6. 変更内容が分かる日本語のコミットメッセージで `main` へ保存する
+7. 日別JSONの更新後、`.github/workflows/rebuild-lore-indexes.yml` が機械的に次の派生データを再構築する
+   - `data/index.json`: 日別正本と月別キャッシュの索引・総件数・最新ID
+   - `data/recent-lores.json`: 直近100作品
+   - `data/latest-lore.json`: 最新IDと総件数
+   - `data/bundles/YYYY-MM.json`: Web表示用の月別キャッシュ
+   - `data/fingerprints/YYYY/MM.json`: 古い作品を軽く比較するためのfingerprint
+8. 再構築後、`data/latest-lore.json` と `data/index.json` で追加IDと総件数が反映されたことを確認する
+
+### データ構造の原則
+
+- `data/YYYY/MM/YYYY-MM-DD.json` が唯一のJSON正本
+- `archive/` は人間向けMarkdownアーカイブ
+- `index`・`recent`・`latest`・`bundles`・`fingerprints` はすべて正本から再生成できる派生データ
+- `data/lores.json` のような全作品単一JSONは再作成しない
+- fingerprintは巨大な単一ファイルにせず月別に分割する
+
+### GitHub Actionsの役割
+
+GitHub Actionsに文章生成を行わせてはいけない。Actionsが担当してよいのは、日別正本の検証、件数・ID重複チェック、索引・キャッシュ・fingerprintの機械的な再構築、Pages配信だけとする。
 
 ### 運用上の注意
 
 - 一時的なGitHub取得・更新失敗を理由に、日次生成タスクそのものを停止しない
 - 日次タスクの停止・無効化は、ユーザーから明示的な指示があった場合だけ行う
-- 同期経路は `.github/workflows/sync-pending-lores.yml` の1本だけを正とし、同じ `pending/lores-*.json` を監視する別Workflowを増やさない
-- `data/lores.json` が大きくなっても、全文取得できないことを「ファイルが空」と判断しない。直近キャッシュやGitHub上のblob/commit情報で確認する
+- 巨大な単一JSONへ戻すことで問題を回避しようとしない
 
 アーカイブの各作品は次の形にする。
 
