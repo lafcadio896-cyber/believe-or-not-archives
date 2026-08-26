@@ -55,7 +55,8 @@ select {
 .metadata,
 .archive-summary,
 footer,
-.controls span {
+.controls span,
+.asset-heading {
   font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   letter-spacing: 0.08em;
 }
@@ -265,6 +266,51 @@ button:focus-visible {
 
 .record-lines p {
   margin: 0;
+}
+
+.record-assets {
+  display: grid;
+  gap: 14px;
+  margin: 38px 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.asset-heading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.asset-item figure {
+  margin: 0;
+}
+
+.asset-item img {
+  display: block;
+  width: 100%;
+  max-height: 620px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: #000;
+}
+
+.asset-item audio {
+  width: 100%;
+}
+
+.asset-item a {
+  color: var(--ink);
+  text-underline-offset: 0.22em;
+}
+
+.asset-item figcaption,
+.asset-caption {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
 }
 
 .closing {
