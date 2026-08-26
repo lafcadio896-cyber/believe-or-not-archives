@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'data/[0-9][0-9][0-9][0-9]/**/*.json'
+      - 'data/assets/[0-9][0-9][0-9][0-9]/*.json'
+      - 'data/relations/[0-9][0-9][0-9][0-9]/*.json'
       - '.github/workflows/rebuild-lore-indexes.yml'
   workflow_dispatch:
 
@@ -28,7 +30,10 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import hashlib
           import json
+          import re
+          import unicodedata
           from collections import defaultdict
           from datetime import datetime
           from pathlib import Path
@@ -42,6 +47,7 @@ jobs:
           all_records = []
           files = []
           seen = set()
+          by_id = {}
 
           for path in daily_paths:
               values = json.loads(path.read_text(encoding='utf-8'))
@@ -61,6 +67,7 @@ jobs:
                   if item['id'] in seen:
                       raise SystemExit(f"duplicate ID: {item['id']}")
                   seen.add(item['id'])
+                  by_id[item['id']] = item
               files.append({
                   'date': expected_date,
                   'path': path.as_posix(),
@@ -77,6 +84,7 @@ jobs:
           for item in all_records:
               monthly[item['published'][:7]].append(item)
 
+          # Web表示用の月別キャッシュ。
           bundle_root = Path('data/bundles')
           bundle_root.mkdir(parents=True, exist_ok=True)
           for old in bundle_root.glob('*.json'):
@@ -89,6 +97,30 @@ jobs:
               json.loads(path.read_text(encoding='utf-8'))
               bundles.append({'month': month, 'path': path.as_posix(), 'count': len(values)})
 
+          def normalize_text(value):
+              return unicodedata.normalize('NFKC', str(value)).lower().strip()
+
+          signal_terms = {
+              'recurrence': ['毎朝','毎晩','毎夜','毎週','毎年','たび','繰り返','翌朝には'],
+              'return': ['戻','帰って','元の場所','再び現','また現'],
+              'duplication': ['同じもの','同じ番号','もう一つ','二つ','二本','二枚','増え','多くな'],
+              'time_shift': ['翌日','未来','予定','閉鎖後','閉館後','前日','先に','まだ起きていない'],
+              'space_shift': ['地図にない','存在しない','反対側','地下','壁の中','海底','距離','内陸'],
+              'absence': ['消え','見つからな','ないはず','欠け','白紙','空にな'],
+              'trace': ['跡','濡れ','泥','砂','灰','傷','木屑','布片','貝殻','足跡','擦れ'],
+              'forecast': ['予定','結果','終値','予告','翌日の','未来の'],
+          }
+
+          def infer_signals(text):
+              normalized = normalize_text(text)
+              return [name for name, terms in signal_terms.items() if any(normalize_text(term) in normalized for term in terms)]
+
+          def digest(value):
+              payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+              return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+          # 古い作品との軽量比較用fingerprint。
+          # semanticな断定ではなく、本文から機械的に再構築できる比較材料だけを持つ。
           fp_root = Path('data/fingerprints')
           fp_root.mkdir(parents=True, exist_ok=True)
           for old in fp_root.glob('**/*.json'):
@@ -101,32 +133,159 @@ jobs:
               values = []
               for item in monthly[month]:
                   tags = item.get('tags', [])
+                  full_text = ' '.join([item['title'], item['medium'], *tags, *item['lines']])
+                  signals = infer_signals(full_text)
+                  ending_signals = infer_signals(item['lines'][-1])
+                  shape_basis = {
+                      'subject': tags[0] if tags else item['title'],
+                      'motifs': sorted(tags),
+                      'medium': item['medium'],
+                      'signals': sorted(signals),
+                      'ending_signals': sorted(ending_signals),
+                  }
+                  content_basis = {
+                      'title': item['title'],
+                      'region': item['region'],
+                      'era': item['era'],
+                      'medium': item['medium'],
+                      'tags': tags,
+                      'lines': item['lines'],
+                  }
                   values.append({
+                      'schema_version': 2,
                       'id': item['id'],
                       'published': item['published'],
                       'title': item['title'],
                       'subject': tags[0] if tags else item['title'],
+                      'motifs': tags,
+                      'context': {
+                          'region': item['region'],
+                          'era': item['era'],
+                          'medium': item['medium'],
+                      },
+                      'beats': {
+                          'setup': item['lines'][0],
+                          'anomaly': item['lines'][1],
+                          'verification': item['lines'][2],
+                          'ending': item['lines'][3],
+                      },
+                      # 旧fingerprintの読み手向け互換フィールド。
                       'mechanism': item['lines'][1],
                       'setting': f"{item['region']} / {item['medium']}",
                       'ending': item['lines'][-1],
                       'tags': tags,
+                      # keywordベースの弱い推定。作品分類の正解として扱わない。
+                      'signals': signals,
+                      'ending_signals': ending_signals,
+                      'metrics': {
+                          'line_lengths': [len(line) for line in item['lines']],
+                          'sentence_count': sum(max(1, line.count('。')) for line in item['lines']),
+                      },
+                      'digests': {
+                          'content_sha256': digest(content_basis),
+                          'shape_sha256': digest(shape_basis),
+                      },
                   })
               path.write_text(json.dumps(values, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
               json.loads(path.read_text(encoding='utf-8'))
-              fingerprint_files.append({'month': month, 'path': path.as_posix(), 'count': len(values)})
+              fingerprint_files.append({'month': month, 'path': path.as_posix(), 'count': len(values), 'schema_version': 2})
 
-          legacy_fp = Path('data/fingerprints.json')
-          if legacy_fp.exists():
-              legacy_fp.unlink()
+          # 資料（画像・音声・地図・文書）は本文正本と分離した月別sidecarで管理する。
+          asset_root = Path('data/assets')
+          asset_root.mkdir(parents=True, exist_ok=True)
+          asset_files = []
+          asset_ids = set()
+          asset_total = 0
+          allowed_asset_types = {'image','audio','map','document'}
+          allowed_asset_statuses = {'planned','available','withheld'}
+          for month in sorted(monthly):
+              year, mon = month.split('-')
+              path = asset_root / year / f'{mon}.json'
+              path.parent.mkdir(parents=True, exist_ok=True)
+              if not path.exists():
+                  path.write_text(json.dumps({'version': 1, 'month': month, 'items': []}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              if payload.get('version') != 1 or payload.get('month') != month or not isinstance(payload.get('items'), list):
+                  raise SystemExit(f'{path}: invalid asset sidecar')
+              for asset in payload['items']:
+                  missing = {'id','lore_id','type','status'}.difference(asset)
+                  if missing:
+                      raise SystemExit(f'{path}: asset missing {sorted(missing)}')
+                  if asset['id'] in asset_ids:
+                      raise SystemExit(f"duplicate asset id: {asset['id']}")
+                  asset_ids.add(asset['id'])
+                  if asset['lore_id'] not in seen:
+                      raise SystemExit(f"{asset['id']}: unknown lore_id {asset['lore_id']}")
+                  if by_id[asset['lore_id']]['published'][:7] != month:
+                      raise SystemExit(f"{asset['id']}: store asset under the lore's published month")
+                  if asset['type'] not in allowed_asset_types:
+                      raise SystemExit(f"{asset['id']}: invalid type {asset['type']}")
+                  if asset['status'] not in allowed_asset_statuses:
+                      raise SystemExit(f"{asset['id']}: invalid status {asset['status']}")
+                  if asset['status'] == 'available' and not (asset.get('path') or asset.get('url')):
+                      raise SystemExit(f"{asset['id']}: available asset requires path or url")
+              asset_total += len(payload['items'])
+              asset_files.append({'month': month, 'path': path.as_posix(), 'count': len(payload['items'])})
+
+          asset_index = {'version': 1, 'total': asset_total, 'files': asset_files}
+          (asset_root / 'index.json').write_text(json.dumps(asset_index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # 関連は「候補」を保持するだけで、同一現象だとは断定しない。
+          relation_root = Path('data/relations')
+          relation_root.mkdir(parents=True, exist_ok=True)
+          relation_files = []
+          relation_total = 0
+          relation_keys = set()
+          allowed_relation_kinds = {'similarity','motif','mechanism','ending','geographic','temporal','editorial'}
+          allowed_relation_statuses = {'candidate','reviewed','rejected'}
+          for month in sorted(monthly):
+              year, mon = month.split('-')
+              path = relation_root / year / f'{mon}.json'
+              path.parent.mkdir(parents=True, exist_ok=True)
+              if not path.exists():
+                  path.write_text(json.dumps({'version': 1, 'month': month, 'relations': []}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              if payload.get('version') != 1 or payload.get('month') != month or not isinstance(payload.get('relations'), list):
+                  raise SystemExit(f'{path}: invalid relation sidecar')
+              for relation in payload['relations']:
+                  missing = {'source','target','kind','status'}.difference(relation)
+                  if missing:
+                      raise SystemExit(f'{path}: relation missing {sorted(missing)}')
+                  source = relation['source']
+                  target = relation['target']
+                  if source == target:
+                      raise SystemExit(f'{path}: self relation is not allowed')
+                  if source not in seen or target not in seen:
+                      raise SystemExit(f'{path}: unknown source/target')
+                  if by_id[source]['published'][:7] != month:
+                      raise SystemExit(f'{path}: store relation under source lore month')
+                  if relation['kind'] not in allowed_relation_kinds:
+                      raise SystemExit(f"{path}: invalid relation kind {relation['kind']}")
+                  if relation['status'] not in allowed_relation_statuses:
+                      raise SystemExit(f"{path}: invalid relation status {relation['status']}")
+                  score = relation.get('score')
+                  if score is not None and (not isinstance(score, (int, float)) or score < 0 or score > 1):
+                      raise SystemExit(f'{path}: score must be between 0 and 1')
+                  key = (source, target, relation['kind'])
+                  if key in relation_keys:
+                      raise SystemExit(f'{path}: duplicate relation {key}')
+                  relation_keys.add(key)
+              relation_total += len(payload['relations'])
+              relation_files.append({'month': month, 'path': path.as_posix(), 'count': len(payload['relations'])})
+
+          relation_index = {'version': 1, 'total': relation_total, 'files': relation_files}
+          (relation_root / 'index.json').write_text(json.dumps(relation_index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
           index = {
-              'version': 2,
+              'version': 3,
               'total': len(all_records),
               'latest_id': latest['id'],
               'latest_published': latest['published'],
               'files': files,
               'bundles': bundles,
               'fingerprints': fingerprint_files,
+              'assets_index': 'data/assets/index.json',
+              'relations_index': 'data/relations/index.json',
           }
           Path('data/index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
@@ -138,9 +297,18 @@ jobs:
               encoding='utf-8',
           )
 
-          for generated in ['data/index.json','data/recent-lores.json','data/latest-lore.json']:
+          for generated in [
+              'data/index.json',
+              'data/recent-lores.json',
+              'data/latest-lore.json',
+              'data/assets/index.json',
+              'data/relations/index.json',
+          ]:
               json.loads(Path(generated).read_text(encoding='utf-8'))
-          print(f'total={len(all_records)} days={len(files)} months={len(bundles)} latest={latest["id"]}')
+          print(
+              f'total={len(all_records)} days={len(files)} months={len(bundles)} '
+              f'assets={asset_total} relations={relation_total} latest={latest["id"]}'
+          )
           PY
 
       - name: Commit rebuilt derived data
@@ -148,9 +316,8 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/index.json data/recent-lores.json data/latest-lore.json data/bundles data/fingerprints
-          git add -u -- data/fingerprints.json 2>/dev/null || true
+          git add data/index.json data/recent-lores.json data/latest-lore.json data/bundles data/fingerprints data/assets data/relations
           git diff --cached --quiet && exit 0
-          git commit -m 'ロア索引・月別表示データ・重複確認データを更新'
+          git commit -m 'ロア解析・資料・関連候補データを再構築'
           git pull --rebase origin main
           git push origin HEAD:main
