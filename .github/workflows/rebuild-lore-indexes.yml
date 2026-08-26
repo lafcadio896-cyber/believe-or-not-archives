@@ -24,17 +24,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate daily files and rebuild metadata
+      - name: Validate daily files and rebuild derived data
         shell: bash
         run: |
           python - <<'PY'
           import json
+          from collections import defaultdict
           from datetime import datetime
           from pathlib import Path
 
           daily_paths = sorted(Path('data').glob('[0-9][0-9][0-9][0-9]/*/*.json'))
           if not daily_paths:
-              raise SystemExit('no daily lore files found')
+              print('no daily lore files found')
+              raise SystemExit(0)
 
           required = {'id','published','title','region','era','medium','tags','lines'}
           all_records = []
@@ -71,49 +73,84 @@ jobs:
           all_records.sort(key=lambda x: (x['published'], x['id']))
           latest = all_records[-1]
 
+          monthly = defaultdict(list)
+          for item in all_records:
+              monthly[item['published'][:7]].append(item)
+
+          bundle_root = Path('data/bundles')
+          bundle_root.mkdir(parents=True, exist_ok=True)
+          for old in bundle_root.glob('*.json'):
+              old.unlink()
+          bundles = []
+          for month in sorted(monthly):
+              values = monthly[month]
+              path = bundle_root / f'{month}.json'
+              path.write_text(json.dumps(values, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+              json.loads(path.read_text(encoding='utf-8'))
+              bundles.append({'month': month, 'path': path.as_posix(), 'count': len(values)})
+
+          fp_root = Path('data/fingerprints')
+          fp_root.mkdir(parents=True, exist_ok=True)
+          for old in fp_root.glob('**/*.json'):
+              old.unlink()
+          fingerprint_files = []
+          for month in sorted(monthly):
+              year, mon = month.split('-')
+              path = fp_root / year / f'{mon}.json'
+              path.parent.mkdir(parents=True, exist_ok=True)
+              values = []
+              for item in monthly[month]:
+                  tags = item.get('tags', [])
+                  values.append({
+                      'id': item['id'],
+                      'published': item['published'],
+                      'title': item['title'],
+                      'subject': tags[0] if tags else item['title'],
+                      'mechanism': item['lines'][1],
+                      'setting': f"{item['region']} / {item['medium']}",
+                      'ending': item['lines'][-1],
+                      'tags': tags,
+                  })
+              path.write_text(json.dumps(values, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+              json.loads(path.read_text(encoding='utf-8'))
+              fingerprint_files.append({'month': month, 'path': path.as_posix(), 'count': len(values)})
+
+          legacy_fp = Path('data/fingerprints.json')
+          if legacy_fp.exists():
+              legacy_fp.unlink()
+
           index = {
-              'version': 1,
+              'version': 2,
               'total': len(all_records),
               'latest_id': latest['id'],
               'latest_published': latest['published'],
               'files': files,
+              'bundles': bundles,
+              'fingerprints': fingerprint_files,
           }
           Path('data/index.json').write_text(json.dumps(index, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
           recent = list(reversed(all_records))[:100]
           Path('data/recent-lores.json').write_text(json.dumps(recent, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          fingerprints = [{
-              'id': item['id'],
-              'published': item['published'],
-              'title': item['title'],
-              'region': item['region'],
-              'era': item['era'],
-              'medium': item['medium'],
-              'tags': item.get('tags', []),
-              'opening': item['lines'][0],
-              'ending': item['lines'][-1],
-          } for item in reversed(all_records)]
-          Path('data/fingerprints.json').write_text(json.dumps(fingerprints, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
-
           Path('data/latest-lore.json').write_text(
               json.dumps({'id': latest['id'], 'published': latest['published'], 'count': len(all_records)}, ensure_ascii=False, indent=2) + '\n',
               encoding='utf-8',
           )
 
-          # Reparse every generated file.
-          for generated in ['data/index.json','data/recent-lores.json','data/fingerprints.json','data/latest-lore.json']:
+          for generated in ['data/index.json','data/recent-lores.json','data/latest-lore.json']:
               json.loads(Path(generated).read_text(encoding='utf-8'))
-          print(f'total={len(all_records)} files={len(files)} latest={latest["id"]}')
+          print(f'total={len(all_records)} days={len(files)} months={len(bundles)} latest={latest["id"]}')
           PY
 
-      - name: Commit rebuilt indexes
+      - name: Commit rebuilt derived data
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/index.json data/recent-lores.json data/fingerprints.json data/latest-lore.json
+          git add data/index.json data/recent-lores.json data/latest-lore.json data/bundles data/fingerprints
+          git add -u -- data/fingerprints.json 2>/dev/null || true
           git diff --cached --quiet && exit 0
-          git commit -m 'ロア索引と重複確認データを更新'
+          git commit -m 'ロア索引・月別表示データ・重複確認データを更新'
           git pull --rebase origin main
           git push origin HEAD:main
