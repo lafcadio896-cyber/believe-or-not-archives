@@ -106,16 +106,41 @@ function showRandomRecord() {
   window.setTimeout(() => card.classList.remove('highlighted'), 2600);
 }
 
+async function fetchJson(path) {
+  const response = await fetch(`./${path}`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`${path}: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 async function initialize() {
   try {
-    const response = await fetch('./data/lores.json', { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    const index = await fetchJson('data/index.json');
+    if (!index || !Number.isInteger(index.total)) {
+      throw new TypeError('Lore index is invalid.');
     }
 
-    const data = await response.json();
-    if (!Array.isArray(data)) {
-      throw new TypeError('Lore data must be an array.');
+    // Web表示では月別キャッシュを優先する。古いindexとの互換用に日別正本へフォールバックする。
+    const sources = Array.isArray(index.bundles) && index.bundles.length > 0
+      ? index.bundles
+      : index.files;
+
+    if (!Array.isArray(sources) || sources.length === 0) {
+      throw new TypeError('Lore index has no data sources.');
+    }
+
+    const chunks = await Promise.all(sources.map(async (source) => {
+      const data = await fetchJson(source.path);
+      if (!Array.isArray(data)) {
+        throw new TypeError(`${source.path}: lore data must be an array.`);
+      }
+      return data;
+    }));
+
+    const data = chunks.flat();
+    if (data.length !== index.total) {
+      throw new Error(`Lore count mismatch: index=${index.total}, loaded=${data.length}`);
     }
 
     records = data.toSorted((a, b) => {
@@ -123,7 +148,7 @@ async function initialize() {
       return dateOrder || b.id.localeCompare(a.id);
     });
 
-    totalCount.textContent = String(records.length);
+    totalCount.textContent = String(index.total);
     populateRegions();
     render();
   } catch (error) {
