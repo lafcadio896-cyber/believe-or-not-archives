@@ -1,4 +1,4 @@
-name: Sync pending lores
+name: Sync prepared lores
 
 on:
   push:
@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sync-pending-lores
+  cancel-in-progress: false
+
 jobs:
   sync:
     if: github.actor != 'github-actions[bot]'
@@ -19,7 +23,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Validate and append pending lores
+
+      - name: Validate and append prepared lores
         shell: bash
         run: |
           python - <<'PY'
@@ -27,19 +32,29 @@ jobs:
           from pathlib import Path
 
           data_path = Path('data/lores.json')
+          recent_path = Path('data/recent-lores.json')
+          latest_path = Path('data/latest-lore.json')
           pending_paths = sorted(Path('pending').glob('lores-*.json'))
+
+          # Workflow更新だけで起動した場合は何もしない。
           if not pending_paths:
-              raise SystemExit('pending lore file not found')
+              print('pending lore file not found; nothing to sync')
+              raise SystemExit(0)
 
           current = json.loads(data_path.read_text(encoding='utf-8'))
+          if not isinstance(current, list):
+              raise SystemExit('data/lores.json: root must be an array')
+
           current_ids = {item['id'] for item in current}
           incoming = []
+          required = {'id','published','title','region','era','medium','tags','lines'}
+
           for path in pending_paths:
               values = json.loads(path.read_text(encoding='utf-8'))
-              if not isinstance(values, list):
-                  raise SystemExit(f'{path}: root must be an array')
+              if not isinstance(values, list) or not values:
+                  raise SystemExit(f'{path}: root must be a non-empty array')
+
               for item in values:
-                  required = {'id','published','title','region','era','medium','tags','lines'}
                   missing = required.difference(item)
                   if missing:
                       raise SystemExit(f"{item.get('id')}: missing {sorted(missing)}")
@@ -50,6 +65,7 @@ jobs:
           incoming_ids = [item['id'] for item in incoming]
           if len(incoming_ids) != len(set(incoming_ids)):
               raise SystemExit('duplicate IDs inside pending data')
+
           duplicated = current_ids.intersection(incoming_ids)
           if duplicated:
               raise SystemExit(f'IDs already exist: {sorted(duplicated)}')
@@ -59,26 +75,45 @@ jobs:
           if len(all_ids) != len(set(all_ids)):
               raise SystemExit('duplicate IDs after append')
 
-          lines = ['[']
-          for i, item in enumerate(current):
-              suffix = ',' if i < len(current) - 1 else ''
-              lines.append('  ' + json.dumps(item, ensure_ascii=False, separators=(',', ':')) + suffix)
-          lines.append(']')
-          data_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          def write_array(path: Path, values):
+              lines = ['[']
+              for i, item in enumerate(values):
+                  suffix = ',' if i < len(values) - 1 else ''
+                  lines.append('  ' + json.dumps(item, ensure_ascii=False, separators=(',', ':')) + suffix)
+              lines.append(']')
+              path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+              reparsed = json.loads(path.read_text(encoding='utf-8'))
+              if len(reparsed) != len(values):
+                  raise SystemExit(f'{path}: JSON reparse count mismatch')
 
-          reparsed = json.loads(data_path.read_text(encoding='utf-8'))
-          if len(reparsed) != len(current):
-              raise SystemExit('JSON reparse count mismatch')
+          # 本体は1作品1行に整形し、次回参照用に直近50件も別ファイルへ保持する。
+          write_array(data_path, current)
+          write_array(recent_path, current[-50:])
+
+          latest = current[-1]
+          latest_path.write_text(
+              json.dumps(
+                  {'id': latest['id'], 'published': latest['published'], 'count': len(current)},
+                  ensure_ascii=False,
+                  indent=2,
+              ) + '\n',
+              encoding='utf-8',
+          )
+          json.loads(latest_path.read_text(encoding='utf-8'))
+
           for path in pending_paths:
               path.unlink()
-          print(f'appended {len(incoming)} lores; total={len(reparsed)}')
+
+          print(f'appended {len(incoming)} lores; total={len(current)}; latest={latest["id"]}')
           PY
+
       - name: Commit synchronized JSON
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/lores.json pending/
+          git add data/lores.json data/recent-lores.json data/latest-lore.json pending/
           git diff --cached --quiet && exit 0
-          git commit -m '保留中のネットロアを本体JSONへ同期'
+          git commit -m '生成済みネットロアを本体JSONへ同期'
+          git pull --rebase origin main
           git push origin HEAD:main
