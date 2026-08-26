@@ -5,9 +5,18 @@
 ## 運用
 
 - ChatGPTのスケジュールが定期的に新作を生成する
-- 生成結果を `archive/` と `data/lores.json` に追加する
+- ロア本文のJSON正本は `data/YYYY/MM/YYYY-MM-DD.json` の日別ファイルとして保存する
+- 人間向けの記録は `archive/YYYY/MM/YYYY-MM-DD.md` に保存する
+- `data/index.json`、`data/recent-lores.json`、`data/latest-lore.json`、月別表示キャッシュ、fingerprintは日別JSONから自動再構築する
+- 全作品を一つにまとめた巨大な `data/lores.json` は使用しない
 - GitHub Pagesで閲覧用サイトを公開する
-- GitHub Actionsは文章生成には使わず、Pagesの配信だけを担当する
+- GitHub Actionsは文章生成には使わず、JSON検証・索引再構築・Pages配信などの機械処理だけを担当する
+
+## 重複の考え方
+
+題材や怪異タイプの再利用そのものは許容します。傘、井戸、存在しない部屋、戻ってくる物などが過去に登場していても、それだけでは重複扱いにしません。
+
+直近100作品は本文まで比較し、題材・展開・結末がほぼ同じ構造になる作品を避けます。それより古い作品は月別fingerprintを必要に応じて参照し、露骨なコピーだけを避けます。
 
 ## 基本形式
 
