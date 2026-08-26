@@ -59,6 +59,8 @@
 
 直近100作品より古い作品については厳密な完全比較を要求しない。候補作が既視感の強い題材になった場合だけ、`data/fingerprints/` 以下の月別fingerprintをGitHub検索または必要な月だけ参照する。古い作品との多少のモチーフ重複は許容し、露骨なコピーに見える場合だけ作り直す。
 
+fingerprintの `signals` はkeywordによる弱い推定であり、作品の正しい分類とはみなさない。`subject`、`motifs`、`beats`、`digests` などを合わせて比較材料として使う。
+
 直近作品ではさらに次を避ける。
 
 - 同じ国・都道府県が4回以上続く
@@ -122,31 +124,49 @@
 4. `archive/YYYY/MM/YYYY-MM-DD.md` を新規作成、または同日の既存ファイルへ追記する
 5. 当日のJSONについて構文、ID重複、各 `lines` が4件であることを確認する
 6. 変更内容が分かる日本語のコミットメッセージで `main` へ保存する
-7. 日別JSONの更新後、`.github/workflows/rebuild-lore-indexes.yml` が機械的に次の派生データを再構築する
-   - `data/index.json`: 日別正本と月別キャッシュの索引・総件数・最新ID
-   - `data/recent-lores.json`: 直近100作品
-   - `data/latest-lore.json`: 最新IDと総件数
-   - `data/bundles/YYYY-MM.json`: Web表示用の月別キャッシュ
-   - `data/fingerprints/YYYY/MM.json`: 古い作品を軽く比較するためのfingerprint
+7. 日別JSONの更新後、`.github/workflows/rebuild-lore-indexes.yml` が機械的に派生データを再構築する
 8. 再構築後、`data/latest-lore.json` と `data/index.json` で追加IDと総件数が反映されたことを確認する
 
 ### データ構造の原則
 
 - `data/YYYY/MM/YYYY-MM-DD.json` が唯一のJSON正本
 - `archive/` は人間向けMarkdownアーカイブ
-- `index`・`recent`・`latest`・`bundles`・`fingerprints` はすべて正本から再生成できる派生データ
+- `data/index.json`、`data/recent-lores.json`、`data/latest-lore.json`、`data/bundles/`、`data/fingerprints/` は正本から再生成できる派生データ
 - `data/lores.json` のような全作品単一JSONは再作成しない
 - fingerprintは巨大な単一ファイルにせず月別に分割する
 
+## 8. Fingerprints / Assets / Relations
+
+詳細なスキーマは `DATA_MODEL.md` を正とする。
+
+### Fingerprints
+
+`data/fingerprints/YYYY/MM.json` はActionsが本文正本から再生成する。生成処理側で直接編集しない。
+
+fingerprintには、主題・モチーフ・地域/年代/媒体、4行の役割分解、弱い異常signal、完全重複用digest、構造比較用digestなどを持たせる。将来の類似検索やクラスタリングの材料とする。
+
+### Assets
+
+`data/assets/YYYY/MM.json` は画像・音声・地図・文書などの付属資料を本文から分離して管理するsidecarである。通常の日次文章生成では資料を捏造して追加しない。実際に資料を作成・登録する処理を行った場合だけ更新する。
+
+`status: available` の資料はサイトが自動表示する。資料が一件もない作品はそのままでよい。
+
+### Relations
+
+`data/relations/YYYY/MM.json` は作品同士の関連**候補**を保持する。通常の日次文章生成では、無理に関連を作らない。
+
+将来の分析で類似が見つかった場合も「同じ怪異」と断定せず、まず `status: candidate` として保存する。`score` は類似度の補助値であり、世界設定上の真偽を意味しない。
+
 ### GitHub Actionsの役割
 
-GitHub Actionsに文章生成を行わせてはいけない。Actionsが担当してよいのは、日別正本の検証、件数・ID重複チェック、索引・キャッシュ・fingerprintの機械的な再構築、Pages配信だけとする。
+GitHub Actionsに文章生成を行わせてはいけない。Actionsが担当してよいのは、日別正本の検証、件数・ID重複チェック、索引・キャッシュ・fingerprintの機械的な再構築、assets/relations sidecarのスキーマ検証、Pages配信だけとする。
 
 ### 運用上の注意
 
 - 一時的なGitHub取得・更新失敗を理由に、日次生成タスクそのものを停止しない
 - 日次タスクの停止・無効化は、ユーザーから明示的な指示があった場合だけ行う
 - 巨大な単一JSONへ戻すことで問題を回避しようとしない
+- 本文正本を、解析方法の変更や資料追加の都合で書き換えない
 
 アーカイブの各作品は次の形にする。
 
