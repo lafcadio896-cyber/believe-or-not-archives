@@ -1,8 +1,8 @@
 {
   "version": 3,
-  "total": 322,
-  "latest_id": "L-20260831-010",
-  "latest_published": "2026-08-31",
+  "total": 332,
+  "latest_id": "L-20260901-010",
+  "latest_published": "2026-09-01",
   "files": [
     {
       "date": "2026-08-01",
@@ -206,6 +206,13 @@
       "count": 10,
       "first_id": "L-20260831-001",
       "last_id": "L-20260831-010"
+    },
+    {
+      "date": "2026-09-01",
+      "path": "data/2026/09/2026-09-01.json",
+      "count": 10,
+      "first_id": "L-20260901-001",
+      "last_id": "L-20260901-010"
     }
   ],
   "bundles": [
@@ -213,6 +220,11 @@
       "month": "2026-08",
       "path": "data/bundles/2026-08.json",
       "count": 322
+    },
+    {
+      "month": "2026-09",
+      "path": "data/bundles/2026-09.json",
+      "count": 10
     }
   ],
   "fingerprints": [
@@ -220,6 +232,12 @@
       "month": "2026-08",
       "path": "data/fingerprints/2026/08.json",
       "count": 322,
+      "schema_version": 2
+    },
+    {
+      "month": "2026-09",
+      "path": "data/fingerprints/2026/09.json",
+      "count": 10,
       "schema_version": 2
     }
   ],
