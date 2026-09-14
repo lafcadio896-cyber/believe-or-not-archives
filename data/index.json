@@ -1,8 +1,8 @@
 {
   "version": 3,
-  "total": 462,
-  "latest_id": "L-20260914-010",
-  "latest_published": "2026-09-14",
+  "total": 472,
+  "latest_id": "L-20260915-010",
+  "latest_published": "2026-09-15",
   "files": [
     {
       "date": "2026-08-01",
@@ -304,6 +304,13 @@
       "count": 10,
       "first_id": "L-20260914-001",
       "last_id": "L-20260914-010"
+    },
+    {
+      "date": "2026-09-15",
+      "path": "data/2026/09/2026-09-15.json",
+      "count": 10,
+      "first_id": "L-20260915-001",
+      "last_id": "L-20260915-010"
     }
   ],
   "bundles": [
@@ -315,7 +322,7 @@
     {
       "month": "2026-09",
       "path": "data/bundles/2026-09.json",
-      "count": 140
+      "count": 150
     }
   ],
   "fingerprints": [
@@ -328,7 +335,7 @@
     {
       "month": "2026-09",
       "path": "data/fingerprints/2026/09.json",
-      "count": 140,
+      "count": 150,
       "schema_version": 2
     }
   ],
